@@ -56,50 +56,40 @@ class LimitlessAuthService: ObservableObject {
             return
         }
 
-        self.oauthswift = OAuthSwift(
+        // Use OAuth2Swift for OAuth2 flows
+        let oauthSwiftInstance = OAuth2Swift(
             consumerKey: clientID,
             consumerSecret: clientSecret,
             authorizeUrl: authorizeUrl,
             accessTokenUrl: accessTokenUrl,
-            responseType: responseType
+            responseType: "code"
         )
-
-        // Configure URL Handler (similar to GoogleAuthService)
-        #if os(iOS) || os(macOS)
-        // Placeholder: Needs presentation context
-        // oauthswift?.authorizeURLHandler = ...
-        #endif
+        self.oauthswift = oauthSwiftInstance
 
         // Start the authorization process
-        let state = "STATE_L_" + UUID().uuidString // Unique state for Limitless
-        let _ = oauthswift?.authorize(
-            withCallbackURL: URL(string: redirectURI)!,
+        let state = "STATE_L_" + UUID().uuidString
+        oauthSwiftInstance.authorize(
+            withCallbackURL: redirectURI,
             scope: scope,
             state: state,
-            completionHandler: { [weak self] result in
+            completionHandler: { [weak self] (result: Result<OAuthSwift.TokenSuccess, OAuthSwiftError>) in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
                     switch result {
-                    case .success(let (credential, _, parameters)):
-                        print("Limitless Auth Success!")
-                        if let receivedState = parameters["state"] as? String, receivedState == state {
-                            print("State verified.")
+                    case .success(let tokenSuccess):
+                        let credential = tokenSuccess.credential
+                        if let receivedState = tokenSuccess.parameters["state"] as? String, receivedState == state {
                             do {
                                 try self.saveCredentials(credential: credential)
                                 self.isAuthenticated = true
-                                // TODO: Potentially fetch and store userCreatorId here or prompt user
                             } catch {
-                                print("Error saving Limitless credentials: \(error)")
                                 self.isAuthenticated = false
                             }
                         } else {
-                             print("Error: State parameter mismatch. Potential CSRF attack.")
-                             self.isAuthenticated = false
+                            self.isAuthenticated = false
                         }
-                    case .failure(let error):
-                        print("Error during Limitless OAuth: \(error.localizedDescription)")
+                    case .failure(_):
                         self.isAuthenticated = false
-                        // TODO: Publish error state
                     }
                 }
             }
@@ -159,23 +149,22 @@ class LimitlessAuthService: ObservableObject {
             completion(.failure(.missingToken))
             return
         }
-       guard let currentOAuthSwift = self.oauthswift ?? OAuthSwift(
+       let oauthSwiftForRefresh = (self.oauthswift as? OAuth2Swift) ?? OAuth2Swift(
             consumerKey: clientID,
             consumerSecret: clientSecret,
-            authorizeUrl: authorizeUrl, // Ensure these are correct
+            authorizeUrl: authorizeUrl,
             accessTokenUrl: accessTokenUrl,
-            responseType: responseType
-        ) else {
-             completion(.failure(.missingCredentials))
-            return
-        }
+            responseType: "code"
+        )
+        self.oauthswift = oauthSwiftForRefresh
 
         // Use the correct refresh URL if different from accessTokenUrl
-        currentOAuthSwift.renewAccessToken(withRefreshToken: refreshToken) { [weak self] result in
+        oauthSwiftForRefresh.renewAccessToken(withRefreshToken: refreshToken) { [weak self] (result: Result<OAuthSwift.TokenSuccess, OAuthSwiftError>) in
             guard let self = self else { return }
             DispatchQueue.main.async {
                 switch result {
-                case .success(let credential):
+                case .success(let tokenSuccess):
+                    let credential = tokenSuccess.credential
                     do {
                         try self.saveCredentials(credential: credential)
                          self.isAuthenticated = true

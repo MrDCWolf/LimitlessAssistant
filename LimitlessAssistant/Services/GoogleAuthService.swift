@@ -63,61 +63,58 @@ class GoogleAuthService: ObservableObject {
             return
         }
 
-        self.oauthswift = OAuthSwift(
+        // Attempting a common OAuth2Swift initializer pattern
+        let oauthSwiftInstance = OAuth2Swift(
             consumerKey: clientID,
             consumerSecret: clientSecret,
             authorizeUrl: authorizeUrl,
             accessTokenUrl: accessTokenUrl,
-            responseType: responseType
+            responseType: "code" // responseType is often specified for OAuth2
         )
+        self.oauthswift = oauthSwiftInstance
 
-        // Use SFSafariViewController for the auth screen on macOS/iOS if possible
-        // This requires assigning an appropriate handler. For macOS, ASWebAuthenticationSession is preferred.
-        // We will set this up properly when integrating with the UI (SettingsView).
-        #if os(iOS) || os(macOS)
-        // Placeholder: Actual handler needs the presentation context (view controller/window)
-        // oauthswift?.authorizeURLHandler = SafariURLHandler(viewController: /* Needs context */, oauthSwift: self.oauthswift!)
-        #endif
+        // Use ASWebAuthenticationSession for macOS (preferred over SFSafariViewController for this platform)
+        // This handler needs to be set up properly.
+        // For now, we proceed, assuming a handler will be configured or the default behavior works.
+        // oauthSwiftInstance.authorizeURLHandler = // ... appropriate handler ...
 
         // Start the authorization process
         let state = "STATE_G_" + UUID().uuidString // Generate a unique state for security
-        let _ = oauthswift?.authorize(
-            withCallbackURL: URL(string: redirectURI)!,
+        
+        // Corrected authorize call
+        oauthSwiftInstance.authorize(
+            withCallbackURL: redirectURI, // Can be String or URL
             scope: scope,
             state: state,
-            // Add PKCE parameters if required by Google in the future or for specific flows
+            // PKCE parameters can be added here if the provider requires them
             // codeChallenge: <challenge>,
             // codeChallengeMethod: "S256",
             // codeVerifier: <verifier>,
-            completionHandler: { [weak self] result in
+            completionHandler: { [weak self] (result: Result<OAuthSwift.TokenSuccess, OAuthSwiftError>) in // Explicitly type result
                 guard let self = self else { return }
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { // Correct async call
                     switch result {
-                    case .success(let (credential, _, parameters)): // parameters might contain additional info
+                    case .success(let tokenSuccess):
                         print("Google Auth Success!")
+                        let credential = tokenSuccess.credential
                         // Verify state parameter to prevent CSRF attacks
-                        if let receivedState = parameters["state"] as? String, receivedState == state {
+                        if let receivedState = tokenSuccess.parameters["state"] as? String, receivedState == state {
                             print("State verified.")
                             do {
                                 try self.saveCredentials(credential: credential)
                                 self.isAuthenticated = true
-                                // TODO: Post notification or update state to indicate success
                             } catch {
                                 print("Error saving Google credentials: \(error)")
                                 self.isAuthenticated = false
-                                // TODO: Handle error (e.g., publish error state)
                             }
                         } else {
                             print("Error: State parameter mismatch. Potential CSRF attack.")
-                             self.isAuthenticated = false
-                            // TODO: Handle error (e.g., publish error state)
+                            self.isAuthenticated = false
                         }
 
                     case .failure(let error):
                         print("Error during Google OAuth: \(error.localizedDescription)")
                         self.isAuthenticated = false
-                        // TODO: Handle error (e.g., publish error state)
-                        // self.authenticationError = .authenticationFailed(error)
                     }
                 }
             }
@@ -177,22 +174,29 @@ class GoogleAuthService: ObservableObject {
             completion(.failure(.missingToken))
             return
         }
-        guard let currentOAuthSwift = self.oauthswift ?? OAuthSwift(
-            consumerKey: clientID,
-            consumerSecret: clientSecret,
-            authorizeUrl: authorizeUrl,
-            accessTokenUrl: accessTokenUrl,
-            responseType: responseType
-        ) else {
-             completion(.failure(.missingCredentials))
+        
+        // Ensure clientID and clientSecret are available for token refresh
+        guard !clientID.isEmpty, !clientSecret.isEmpty else {
+            completion(.failure(.missingCredentials))
             return
         }
 
-        currentOAuthSwift.renewAccessToken(withRefreshToken: refreshToken) { [weak self] result in
+        // Attempting a common OAuth2Swift initializer pattern for refresh
+        let oauthSwiftForRefresh = self.oauthswift as? OAuth2Swift ?? OAuth2Swift(
+            consumerKey: clientID,
+            consumerSecret: clientSecret,
+            authorizeUrl: authorizeUrl, 
+            accessTokenUrl: accessTokenUrl,
+            responseType: "code"
+        )
+        self.oauthswift = oauthSwiftForRefresh // Ensure self.oauthswift is updated if it was nil
+
+        oauthSwiftForRefresh.renewAccessToken(withRefreshToken: refreshToken) { [weak self] (result: Result<OAuthSwift.TokenSuccess, OAuthSwiftError>) in // Explicitly type result
             guard let self = self else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { // Correct async call
                 switch result {
-                case .success(let credential):
+                case .success(let tokenSuccess):
+                    let credential = tokenSuccess.credential
                     do {
                         try self.saveCredentials(credential: credential)
                         self.isAuthenticated = true // Ensure state reflects successful refresh

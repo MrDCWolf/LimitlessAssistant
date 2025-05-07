@@ -6,9 +6,9 @@ struct LimitlessAssistantApp: App {
         WindowGroup {
             ContentView() // Placeholder main view
         }
-        // Add settings scene later if needed (macOS 13+)
-        // Settings {
-        //     SettingsView()
-        // }
+        
+        Settings { // Add the Settings scene
+            SettingsView()
+        }
     }
 } 
