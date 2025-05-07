@@ -1,0 +1,184 @@
+# Cursor Rules & Project Guidelines: Limitless Assistant
+
+This document outlines coding conventions, architectural patterns, best practices, and project-specific rules for the "Limitless Assistant" macOS application. It is intended to guide both human developers and AI coding assistants (like Cursor) to ensure consistency, quality, and adherence to project goals.
+
+## 1. Project Overview
+
+* **Name:** LimitlessAssistant
+* **Description:** macOS application to process Limitless.ai transcripts, identify actionable items (events, tasks, reminders), integrate with Google services, and learn from user feedback. Uses LLMs for analysis.
+* **Version:** 1.0.0
+* **Repository:** GitHub (User to specify actual URL when created)
+* **Core Documentation:**
+    * **Product Requirements Document (PRD):** `LimitlessAssistantPRD.md` (Immersive ID)
+    * **Phased Task Plan (TASKS.md):** `TASKS.md` (Immersive ID)
+
+## 2. Language & Platform
+
+* **Language:** Swift (Latest stable, e.g., 5.10+)
+    * **Guidelines:** Adhere to [Apple's Swift API Design Guidelines](https://swift.org/documentation/api-design-guidelines/).
+* **Target Platform:** macOS
+    * **Version:** Latest official version 
+
+## 3. Key Frameworks & Libraries
+
+* **SwiftUI:**
+    * **Usage:** Primary UI framework for a modern, declarative macOS interface.
+    * **Best Practices:** Emphasize creating reusable and composable views. Keep views lightweight. Adhere to the "Modern Glass Style" UI/UX principles (see section 4.1).
+* **GRDB.swift:**
+    * **Usage:** Core library for SQLite database interaction, including FTS5 for text search.
+    * **Best Practices:** Strictly follow GRDB patterns for record types (`FetchableRecord`, `PersistableRecord`, `Codable`), database queues (`DatabaseQueue`), migrations (`DatabaseMigrator`), and repositories.
+* **OAuthSwift:**
+    * **Usage:** For handling OAuth 2.0 authentication flows for Limitless.ai and Google APIs.
+    * **Best Practices:** Ensure proper handling of callback URLs and token refresh mechanisms.
+* **UserNotifications:**
+    * **Usage:** For delivering local macOS notifications (e.g., for automatically added items).
+* **Security (Keychain Services):**
+    * **Usage:** Mandatory for secure storage of ALL API keys, client secrets, and OAuth tokens.
+    * **Best Practices:** No secrets should be hardcoded.
+
+## 4. Architecture
+
+* **Pattern:** MVVM (Model-View-ViewModel) for SwiftUI application structure.
+* **Core Components:**
+    * **Views (SwiftUI):** Responsible for UI presentation. Delegate logic to ViewModels. Use `@State`, `@Binding`, `@StateObject`, `@ObservedObject`, and `@EnvironmentObject` appropriately. Must implement the "Modern Glass Style" (see section 4.1).
+    * **ViewModels (`ObservableObject`):** Manage state, business logic, and actions for Views. Interface with Services and Repositories.
+    * **Models (`struct`s, `Codable`):** Data structures for API request/responses and GRDB records.
+    * **Services:** Handle external interactions and shared business logic (e.g., `LimitlessAPIService`, `GoogleCalendarService`, `LLMService`, `AuthService`, `KeychainService`, `NotificationService`). Define protocols for services.
+    * **Repositories:** Data access layer for GRDB.swift database interactions (e.g., `ConversationRepository`, `UtteranceRepository`). Encapsulate database queries.
+* **Concurrency:**
+    * **Standard:** Utilize Swift Concurrency (`async/await`, `Task`, `actor`) for all asynchronous operations.
+    * **UI Updates:** Ensure all UI updates are dispatched to the `@MainActor`.
+
+**4.1. UI/UX Design Principles (Modern Glass Style)**
+
+The application should have a modern, clean, and visually appealing "transparent glass" (glassmorphism) style. This enhances the native macOS feel while providing a sophisticated user experience.
+
+* **Materials & Translucency:**
+    * Extensively use SwiftUI's built-in `Material` types (e.g., `.thinMaterial`, `.regularMaterial`, `.thickMaterial`, `.ultraThinMaterial`) for the background of primary views, sidebars, sheets, popovers, and other container elements.
+    * The choice of material thickness should correspond to the hierarchical level of the view element.
+* **Vibrancy:**
+    * Employ `VibrancyEffect` for text, SF Symbols, and other foreground content placed on top of material backgrounds. This ensures legibility and a harmonious blend with the translucent effect as content adapts to the underlying desktop wallpaper.
+* **Depth & Shadows:**
+    * Use subtle shadows (`.shadow()`) on elements that "float" above the glass-like surfaces to create a sense of depth and hierarchy. Avoid overly strong or dark shadows.
+* **Rounded Corners:**
+    * Apply consistent rounded corners (`.cornerRadius()`) to all UI elements, including windows, panes, buttons, text fields, list rows, and modal views. The radius should be consistent or follow a clear visual hierarchy.
+* **SF Symbols:**
+    * Utilize Apple's SF Symbols for all iconography. Ensure symbols are well-integrated with vibrancy effects and are appropriately scaled.
+* **Typography:**
+    * Use the San Francisco system font (or specified modern alternative) consistently.
+    * Establish a clear typographic hierarchy (titles, subtitles, body text, captions) using different font weights and sizes.
+    * Ensure high contrast for text, especially when displayed over material backgrounds.
+* **Padding & Spacing:**
+    * Employ generous and consistent padding around elements and within containers.
+    * Maintain balanced spacing to create a clean, uncluttered, and breathable layout.
+* **Animations & Transitions:**
+    * Incorporate smooth and subtle animations for view transitions, state changes, and user interactions.
+    * Animations should feel fluid and enhance the modern aesthetic without being distracting.
+* **Color Palette:**
+    * While transparency is central, define a primary accent color for interactive elements (buttons, selections) that complements the glass style.
+    * Use a neutral palette (grays, whites) for non-transparent elements or text where vibrancy is not applied.
+    * The overall design should work well with a variety of desktop backgrounds showing through the translucent materials.
+* **Consistency:**
+    * The "Modern Glass Style" must be applied consistently across all application views, including main windows, settings screens, sheets, popovers, alerts, and any custom controls.
+
+## 5. Coding Style & Conventions
+
+* **Formatter:** Adhere to Swift API Design Guidelines. Aim for readability and clarity.
+* **Naming Conventions:**
+    * **General:** Swift standard: UpperCamelCase for types/protocols/enums; lowerCamelCase for functions/methods/variables/constants.
+    * **Protocols:** Often end with 'ing', 'able', or 'Type' (e.g., `AuthenticatingServicing`).
+    * **Services:** Suffix with `Service` (e.g., `LimitlessAPIService`).
+    * **Repositories:** Suffix with `Repository` (e.g., `ConversationRepository`).
+    * **ViewModels:** Suffix with `ViewModel` (e.g., `SettingsViewModel`).
+    * **Booleans:** Prefer positive names (e.g., `isAuthenticated`).
+* **Comments:**
+    * Use DocC (`/** ... */`) for public APIs and complex types/functions.
+    * Use `// MARK: - Section Name` to organize code within files.
+    * Comment non-obvious logic, workarounds, or important assumptions.
+* **Error Handling:**
+    * Use Swift's typed error handling (`Error` protocol, `enum` for specific errors, `try/catch`, `Result<Success, Failure>`).
+    * Define custom, specific error enums for different domains (e.g., `NetworkError`, `DatabaseError`, `LLMProcessingError`, `AuthError`).
+    * Avoid force unwrapping (`!`) and force try (`try!`) unless absolutely safe and justified with a comment.
+* **Logging:**
+    * Use `OSLog` (Logger API) for structured and performant logging.
+    * Define a consistent subsystem (e.g., app bundle ID) and categories for different modules (e.g., `DatabaseService`, `APISync`).
+    * Use appropriate log levels: `debug`, `info`, `notice`, `error`, `fault`.
+
+## 6. Dependency Management
+
+* **Manager:** Swift Package Manager (SPM).
+* **Guidelines:** Define all dependencies in `Package.swift`. Keep external dependencies to a minimum. Prefer native Apple frameworks. Regularly review and update dependencies.
+
+## 7. Testing Strategy
+
+* **Framework:** XCTest.
+* **Unit Tests:**
+    * **Scope:** Required for ViewModels, Services, Repositories, and complex Models/utility functions.
+    * **Practices:** Mock dependencies using protocols and mock implementations. Focus on business logic, edge cases, and error handling. Aim for meaningful coverage.
+* **UI Tests:**
+    * **Scope:** Implement for critical user flows: authentication, settings configuration, reviewing and accepting/declining suggestions, core search functionality. Pay attention to how glassmorphism might affect element identification if not done carefully.
+* **Performance Tests:**
+    * **Scope:** Consider XCTest performance tests for critical operations (large data ingestion, complex DB queries like FTS5, LLM context preparation) if performance becomes a concern.
+
+## 8. Security Best Practices
+
+* **Secrets Management (CRITICAL):**
+    * All API keys (Limitless, Google, LLM), client secrets, and OAuth tokens MUST be stored exclusively in the macOS Keychain using the Security framework.
+    * Implement a robust `KeychainService` for this purpose.
+    * Absolutely NO hardcoding of secrets in source code or configuration files committed to version control. Users will provide these credentials via the application's settings UI.
+* **Data Privacy:**
+    * User transcript data is highly sensitive and is stored locally in the SQLite database.
+    * Ensure the database file is stored in the appropriate Application Support directory with default macOS file protections.
+* **API Communication:**
+    * All external API communication MUST use HTTPS.
+
+## 9. Project-Specific Rules & Guidelines
+
+1.  **Consult Core Documentation:**
+    * Before implementing any feature or making significant architectural changes, ALWAYS consult the `prd_limitless_assistant_v1_markdown` (PRD) and `tasks_md_limitless_assistant` (TASKS.md) documents for detailed requirements, specifications, and the agreed-upon phased approach.
+2.  **LLM Prompt Management and Versioning:**
+    * LLM prompts are critical. They should be clearly defined, potentially in a dedicated constants file or configuration structure.
+    * When prompts are updated, consider versioning them (e.g., in `LlmActionSuggestionRecord.llmPromptVersion`) to track which version of a prompt generated a particular suggestion, aiding in debugging and refinement.
+3.  **Database Migrations with GRDB.swift:**
+    * All database schema changes MUST be handled through GRDB's `DatabaseMigrator`.
+    * Each schema change should be a new, clearly named migration. Test migrations thoroughly, especially for data preservation during upgrades.
+4.  **Context for Logical Events (Meetings spanning multiple lifelogs):**
+    * A core requirement is handling conversations that Limitless might split into multiple 'lifelogs'. The database schema (`ConversationRecord.logicalEventId`) and processing logic (detailed in TASKS.md Phases 3, 5, 7, 13) MUST account for this.
+    * When processing for LLM or displaying context to the user, ensure the full logical event (potentially multiple `ConversationRecord`s) is considered.
+5.  **Date and Time Handling:**
+    * Be meticulous with date, time, and timezone conversions.
+    * Use `ISO8601DateFormatter` for parsing dates from APIs.
+    * Store dates as `Date` objects in GRDB.
+    * Be explicit about timezones when displaying dates/times to the user or sending them to external services like Google Calendar (typically UTC for API interactions, convert to local for display).
+6.  **SwiftUI View Performance and Identity:**
+    * Keep SwiftUI views as `structs`.
+    * Ensure proper use of `@State`, `@StateObject`, `@ObservedObject`, and `@EnvironmentObject` to manage view identity and minimize unnecessary re-renders.
+    * Use `Identifiable` for data in `List` or `ForEach` and provide explicit `id` parameters where necessary.
+    * Profile UI performance with Instruments if issues arise.
+7.  **Modularity and Reusability:**
+    * Design components (services, repositories, UI elements) to be as modular and reusable as possible.
+    * Use protocols to define clear interfaces between components, facilitating dependency injection and testability.
+8.  **User-Provided API Credentials:**
+    * The application relies on users providing their own API keys and client secrets for Limitless, Google, and LLM services.
+    * The UI for inputting these (in `SettingsView`) must be clear, and storage in Keychain must be robust.
+    * Handle cases where keys are missing or invalid gracefully, providing clear feedback to the user.
+
+## 10. AI Assistant (Cursor) Interaction Guidelines
+
+* **Code Generation:**
+    * When generating code, strictly adhere to the patterns, conventions, and specific rules defined in this document, including the UI/UX Design Principles for the "Modern Glass Style".
+    * Prioritize clarity, maintainability, robustness, and security.
+    * If a rule seems to conflict with a request, ask for clarification before proceeding.
+* **Explanations:**
+    * Provide concise explanations for complex code sections, non-obvious design choices, or when implementing project-specific rules (like logical event handling or advanced GRDB features).
+* **Task Breakdown & Referencing:**
+    * When asked to implement a feature or task, refer to the relevant phase and sub-tasks in `tasks_md_limitless_assistant`.
+    * If a task is large, suggest breaking it down into smaller, logical coding steps.
+    * Actively use information within the PRD (`prd_limitless_assistant_v1_markdown`) and TASKS.md to ensure generated code aligns with the project's goals and phased plan.
+* **Testing Code:**
+    * When generating functional code for services, repositories, or view models, also suggest or generate corresponding XCTest unit test stubs or basic test cases that cover primary functionality and common edge cases.
+    * Highlight dependencies that would need mocking for effective unit testing.
+* **Iterative Refinement:**
+    * Be prepared to iterate on generated code based on feedback, especially for UI elements (achieving the desired glassmorphism), LLM prompt engineering, and complex business logic.
+    * When updating existing code, ensure changes are consistent with the established patterns and rules.
+
