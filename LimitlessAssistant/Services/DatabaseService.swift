@@ -67,8 +67,8 @@ class DatabaseService {
             // MARK: - SpeakerRecord Table
             try db.create(table: SpeakerRecord.databaseTableName) { t in
                 t.autoIncrementedPrimaryKey(SpeakerRecord.Columns.id.rawValue)
+                t.column(SpeakerRecord.Columns.limitlessSpeakerId.rawValue, .text).notNull().unique()
                 t.column(SpeakerRecord.Columns.name.rawValue, .text).notNull()
-                t.column(SpeakerRecord.Columns.limitlessSpeakerNameRaw.rawValue, .text)
                 t.column(SpeakerRecord.Columns.isUserCreator.rawValue, .boolean).notNull()
             }
             DatabaseService.logger.debug("Created table '\(SpeakerRecord.databaseTableName, privacy: .public)'")
@@ -145,9 +145,10 @@ class DatabaseService {
 
             // MARK: - ApplicationSettingRecord Table
             try db.create(table: ApplicationSettingRecord.databaseTableName) { t in
-                // Assuming settingKey is the primary key and is unique text
-                t.column("settingKey", .text).primaryKey(onConflict: .replace) // Using the raw string from model as it's the PK
-                t.column("settingValue", .text).notNull()
+                // Use CodingKeys from ApplicationSettingRecord for column names
+                t.column(ApplicationSettingRecord.CodingKeys.settingKey.rawValue, .text).primaryKey(onConflict: .replace)
+                t.column(ApplicationSettingRecord.CodingKeys.value.rawValue, .text).notNull()
+                t.column(ApplicationSettingRecord.CodingKeys.updatedAt.rawValue, .datetime).notNull()
             }
             DatabaseService.logger.debug("Created table '\(ApplicationSettingRecord.databaseTableName, privacy: .public)'")
             DatabaseService.logger.info("Migration v1 completed.")

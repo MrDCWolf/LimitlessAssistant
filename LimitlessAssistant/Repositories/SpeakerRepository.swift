@@ -1,61 +1,95 @@
 import GRDB
-import Foundation
-import os.log
 
-class SpeakerRepository {
-    private let dbQueue: DatabaseQueue
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.LimitlessAssistant", category: "SpeakerRepository")
+struct SpeakerRepository {
+    private var dbWriter: any DatabaseWriter
 
-    init(dbQueue: DatabaseQueue = DatabaseService.shared.dbQueue) {
-        self.dbQueue = dbQueue
+    init(dbWriter: any DatabaseWriter) {
+        self.dbWriter = dbWriter
     }
 
-    // MARK: - Create / Update
-    func save(_ speaker: inout SpeakerRecord) throws {
-        let mutableSpeaker = speaker // Create a let constant since it's not mutated
-        try dbQueue.write {
-            try mutableSpeaker.save($0) // Save the constant
-            SpeakerRepository.logger.debug("Saved speaker with ID: \(mutableSpeaker.id ?? -1)")
-        }
-        speaker = mutableSpeaker // Assign back (still valid for inout)
-    }
-    
-    // Check if a speaker with a raw name already exists
-    func findByRawName(_ rawName: String) throws -> SpeakerRecord? {
-        try dbQueue.read {
-            try SpeakerRecord.filter(SpeakerRecord.Columns.limitlessSpeakerNameRaw == rawName).fetchOne($0)
-        }
-    }
+    // MARK: - CRUD Operations
 
-    // MARK: - Read
-    func fetchAll() throws -> [SpeakerRecord] {
-        try dbQueue.read {
-            try SpeakerRecord.fetchAll($0)
-        }
-    }
-
-    func fetchById(_ id: Int64) throws -> SpeakerRecord? {
-        try dbQueue.read {
-            try SpeakerRecord.fetchOne($0, key: id)
+    /// Creates a new speaker record in the database or updates if it already exists based on `limitlessSpeakerId`.
+    /// This is an "upsert" operation. The `speakerName` and `isUserCreator` fields will be updated if an existing record is found.
+    func createOrUpdate(_ speaker: SpeakerRecord) async throws -> SpeakerRecord {
+        return try await dbWriter.write { db -> SpeakerRecord in
+            var speakerToUpsert = speaker
+            if let existingSpeaker = try SpeakerRecord
+                .filter(SpeakerRecord.Columns.limitlessSpeakerId == speakerToUpsert.limitlessSpeakerId)
+                .fetchOne(db) {
+                speakerToUpsert.id = existingSpeaker.id // Ensure we have the ID for update
+                try speakerToUpsert.update(db)
+            } else {
+                try speakerToUpsert.insert(db)
+            }
+            return speakerToUpsert // Return the (potentially updated with ID) speaker
         }
     }
     
-    func fetchUserCreatorSpeaker() throws -> SpeakerRecord? {
-        try dbQueue.read {
-            try SpeakerRecord.filter(SpeakerRecord.Columns.isUserCreator == true).fetchOne($0)
+    /// Saves a speaker record (inserts or updates).
+    /// GRDB's `save()` method handles this by checking for an ID.
+    /// Returns the saved speaker record (which will have an ID).
+    func save(_ speaker: SpeakerRecord) async throws -> SpeakerRecord {
+        return try await dbWriter.write { db -> SpeakerRecord in
+            var speakerToSave = speaker
+            try speakerToSave.save(db) // save will insert if id is nil, otherwise update
+            return speakerToSave
         }
     }
 
-    // MARK: - Delete
-    func deleteById(_ id: Int64) throws -> Bool {
-        try dbQueue.write {
-            try SpeakerRecord.deleteOne($0, key: id)
+    /// Fetches a speaker record by its internal database ID.
+    func fetchOne(id: Int64) async throws -> SpeakerRecord? {
+        try await dbWriter.read { db in
+            try SpeakerRecord.fetchOne(db, key: id)
         }
     }
 
-    func deleteAll() throws {
-        try dbQueue.write {
-            _ = try SpeakerRecord.deleteAll($0)
+    /// Fetches a speaker record by its `limitlessSpeakerId`.
+    func fetchOne(limitlessSpeakerId: String) async throws -> SpeakerRecord? {
+        try await dbWriter.read { db in
+            try SpeakerRecord.filter(SpeakerRecord.Columns.limitlessSpeakerId == limitlessSpeakerId).fetchOne(db)
+        }
+    }
+
+    /// Fetches all speaker records.
+    func fetchAll() async throws -> [SpeakerRecord] {
+        try await dbWriter.read { db in
+            try SpeakerRecord.fetchAll(db)
+        }
+    }
+
+    /// Updates an existing speaker record.
+    /// Note: `save(_:)` or `createOrUpdate(_:)` are generally preferred.
+    func update(_ speaker: SpeakerRecord) async throws {
+        try await dbWriter.write { db in
+            try speaker.update(db)
+        }
+    }
+
+    /// Deletes a speaker record by its ID.
+    /// Be cautious with deletions if speakers are referenced by utterances.
+    /// The foreign key constraint on UtteranceRecord (ON DELETE RESTRICT) will prevent deletion if referenced.
+    @discardableResult
+    func delete(id: Int64) async throws -> Bool {
+        try await dbWriter.write { db in
+            try SpeakerRecord.deleteOne(db, key: id)
+        }
+    }
+    
+    /// Fetches the speaker record identified as the user creator.
+    func fetchUserCreatorSpeaker() async throws -> SpeakerRecord? {
+        try await dbWriter.read { db in
+            try SpeakerRecord.filter(SpeakerRecord.Columns.isUserCreator == true).fetchOne(db)
+        }
+    }
+
+    /// Deletes all speaker records from the database.
+    /// Use with extreme caution due to foreign key constraints.
+    func deleteAll() async throws {
+        _ = try await dbWriter.write { db in
+            // This will fail if any speakers are referenced by utterances due to ON DELETE RESTRICT.
+            // You might need to delete utterances first or change the foreign key behavior if mass deletion is required.
+            try SpeakerRecord.deleteAll(db)
         }
     }
 } 

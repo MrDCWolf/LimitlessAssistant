@@ -1,77 +1,142 @@
 import GRDB
 import Foundation
-import os.log
 
-class LlmActionSuggestionRepository {
-    private let dbQueue: DatabaseQueue
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.LimitlessAssistant", category: "LlmActionSuggestionRepository")
+struct LlmActionSuggestionRepository {
+    private var dbWriter: any DatabaseWriter
 
-    init(dbQueue: DatabaseQueue = DatabaseService.shared.dbQueue) {
-        self.dbQueue = dbQueue
+    init(dbWriter: any DatabaseWriter) {
+        self.dbWriter = dbWriter
     }
 
-    // MARK: - Create / Update
-    func save(_ suggestion: inout LlmActionSuggestionRecord) throws {
-        // Ensure updatedAt is set on save
-        suggestion.updatedAt = Date()
-        if suggestion.id == nil { // New record
-            suggestion.createdAt = Date()
-        }
-        
-        let mutableSuggestion = suggestion // Create a let constant since it's not mutated
-        try dbQueue.write {
-            try mutableSuggestion.save($0) // Save the constant
-            LlmActionSuggestionRepository.logger.debug("Saved LLM action suggestion with ID: \(mutableSuggestion.id ?? -1)")
-        }
-        suggestion = mutableSuggestion // Assign back (still valid for inout)
-    }
+    // MARK: - CRUD & Save Operations
 
-    // MARK: - Read
-    func fetchAll() throws -> [LlmActionSuggestionRecord] {
-        try dbQueue.read {
-            try LlmActionSuggestionRecord.fetchAll($0)
+    /// Creates a new LLM action suggestion record.
+    /// Automatically sets `createdAt` and `updatedAt` timestamps.
+    func create(_ suggestion: LlmActionSuggestionRecord) async throws -> LlmActionSuggestionRecord {
+        return try await dbWriter.write { db -> LlmActionSuggestionRecord in
+            var suggestionToInsert = suggestion
+            let now = Date()
+            suggestionToInsert.createdAt = now
+            suggestionToInsert.updatedAt = now
+            try suggestionToInsert.insert(db)
+            return suggestionToInsert
         }
     }
 
-    func fetchById(_ id: Int64) throws -> LlmActionSuggestionRecord? {
-        try dbQueue.read {
-            try LlmActionSuggestionRecord.fetchOne($0, key: id)
+    /// Saves an LLM action suggestion record (inserts or updates).
+    /// Updates `updatedAt` timestamp on save. If it's a new record (id is nil), `createdAt` is also set.
+    /// Returns the saved record, which will have its ID and timestamps populated.
+    func save(_ suggestion: LlmActionSuggestionRecord) async throws -> LlmActionSuggestionRecord {
+        return try await dbWriter.write { db -> LlmActionSuggestionRecord in
+            var suggestionToSave = suggestion
+            let now = Date()
+            suggestionToSave.updatedAt = now
+            if suggestionToSave.id == nil {
+                suggestionToSave.createdAt = now
+            }
+            try suggestionToSave.save(db)
+            return suggestionToSave
         }
     }
-    
-    func fetchByConversationId(_ conversationId: Int64) throws -> [LlmActionSuggestionRecord] {
-        try dbQueue.read {
-            try LlmActionSuggestionRecord
+
+    /// Fetches an LLM action suggestion record by its ID.
+    func fetchOne(id: Int64) async throws -> LlmActionSuggestionRecord? {
+        try await dbWriter.read { db in
+            try LlmActionSuggestionRecord.fetchOne(db, key: id)
+        }
+    }
+
+    /// Fetches all LLM action suggestion records, ordered by creation date (newest first).
+    /// An optional limit can be provided.
+    func fetchAll(limit: Int? = nil) async throws -> [LlmActionSuggestionRecord] {
+        try await dbWriter.read { db in
+            var request = LlmActionSuggestionRecord.order(LlmActionSuggestionRecord.Columns.createdAt.desc)
+            if let limit = limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
+        }
+    }
+
+    /// Fetches all LLM action suggestion records for a specific conversation ID, ordered by creation date (newest first).
+    /// An optional limit can be provided.
+    func fetchAll(conversationId: Int64, limit: Int? = nil) async throws -> [LlmActionSuggestionRecord] {
+        try await dbWriter.read { db in
+            var request = LlmActionSuggestionRecord
                 .filter(LlmActionSuggestionRecord.Columns.conversationId == conversationId)
                 .order(LlmActionSuggestionRecord.Columns.createdAt.desc)
-                .fetchAll($0)
+            if let limit = limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
         }
     }
-    
-    func fetchByStatus(_ status: String, limit: Int = 100) throws -> [LlmActionSuggestionRecord] {
-        try dbQueue.read {
-            try LlmActionSuggestionRecord
+
+    /// Fetches all LLM action suggestion records with a specific status, ordered by creation date (newest first).
+    /// An optional limit can be provided.
+    func fetchAll(status: String, limit: Int? = nil) async throws -> [LlmActionSuggestionRecord] {
+        try await dbWriter.read { db in
+            var request = LlmActionSuggestionRecord
                 .filter(LlmActionSuggestionRecord.Columns.status == status)
                 .order(LlmActionSuggestionRecord.Columns.createdAt.desc)
-                .limit(limit)
-                .fetchAll($0)
+            if let limit = limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
         }
     }
     
-    func fetchPendingReview(limit: Int = 50) throws -> [LlmActionSuggestionRecord] {
-        try fetchByStatus("PENDING_REVIEW", limit: limit)
-    }
-
-    // MARK: - Delete
-    func deleteById(_ id: Int64) throws -> Bool {
-        try dbQueue.write {
-            try LlmActionSuggestionRecord.deleteOne($0, key: id)
+    /// Fetches LLM action suggestions for a specific conversation ID and status, ordered by creation date (newest first).
+    /// An optional limit can be provided.
+    func fetchAll(conversationId: Int64, status: String, limit: Int? = nil) async throws -> [LlmActionSuggestionRecord] {
+        try await dbWriter.read { db in
+            var request = LlmActionSuggestionRecord
+                .filter(LlmActionSuggestionRecord.Columns.conversationId == conversationId)
+                .filter(LlmActionSuggestionRecord.Columns.status == status)
+                .order(LlmActionSuggestionRecord.Columns.createdAt.desc)
+             if let limit = limit {
+                request = request.limit(limit)
+            }
+            return try request.fetchAll(db)
         }
     }
 
-    func deleteAll() throws {
-        try dbQueue.write {
-            _ = try LlmActionSuggestionRecord.deleteAll($0)
+    /// Updates an existing LLM action suggestion record. Also updates the `updatedAt` timestamp.
+    /// Prefer `save(_:)` for a more general upsert behavior.
+    func update(_ suggestion: LlmActionSuggestionRecord) async throws {
+        return try await dbWriter.write { db in
+            var mutableSuggestion = suggestion
+            mutableSuggestion.updatedAt = Date()
+            try mutableSuggestion.update(db)
+        }
+    }
+
+    /// Deletes an LLM action suggestion record by its ID.
+    @discardableResult
+    func delete(id: Int64) async throws -> Bool {
+        try await dbWriter.write { db in
+            try LlmActionSuggestionRecord.deleteOne(db, key: id)
+        }
+    }
+    
+    // MARK: - Bulk Deletion
+
+    /// Deletes all LLM action suggestion records for a specific conversation ID.
+    /// Returns the number of deleted records.
+    @discardableResult
+    func deleteAll(conversationId: Int64) async throws -> Int {
+        try await dbWriter.write { db in
+            try LlmActionSuggestionRecord
+                .filter(LlmActionSuggestionRecord.Columns.conversationId == conversationId)
+                .deleteAll(db)
+        }
+    }
+
+    /// Deletes all LLM action suggestion records from the database.
+    /// Use with caution.
+    func deleteAll() async throws {
+        _ = try await dbWriter.write { db in
+            try LlmActionSuggestionRecord.deleteAll(db)
         }
     }
 } 

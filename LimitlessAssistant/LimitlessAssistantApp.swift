@@ -13,5 +13,12 @@ struct LimitlessAssistantApp: App {
         WindowGroup {
             ContentView()
         }
+        
+        // Add the Settings scene
+        #if os(macOS)
+        Settings {
+            SettingsView()
+        }
+        #endif
     }
 }
